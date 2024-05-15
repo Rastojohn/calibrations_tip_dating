@@ -1,0 +1,38 @@
+library(dplyr)
+library(stringr)
+
+generate_calibrations <- function(input_file, output_file) {
+  # Import data
+  df <- read.csv(input_file)
+  
+  # Subset and rename the columns
+  new_df <- df %>%
+    select(taxa = accepted_name, min_ma, max_ma)
+  
+  # Filter to retain only unique entries for each taxa with different max_ma or min_ma values
+  filtered_df <- new_df %>%
+    group_by(taxa) %>%
+    filter(n() == 1 | (max(min_ma) != min(min_ma) | max(max_ma) != min(max_ma))) %>%
+    ungroup()
+  
+  # Create a new dataframe with one entry per taxa with min(min_ma) and max(max_ma)
+  result_df <- new_df %>%
+    group_by(taxa) %>%
+    summarize(min_ma = min(min_ma), max_ma = max(max_ma)) %>%
+    ungroup()
+  
+  # Replace spaces with underscores in taxa names
+  result_df <- result_df %>%
+    mutate(taxa = str_replace_all(taxa, " ", "_"))
+  
+  # Create the output strings in the required format
+  output_lines <- result_df %>%
+    mutate(output = paste0(taxa, " = uniform(", min_ma, ", ", max_ma, ")")) %>%
+    pull(output)
+  
+  # Write the lines to a .txt file
+  writeLines(output_lines, output_file)
+}
+
+#example
+generate_calibrations("pbdb_data.csv", "calibrations.txt")
