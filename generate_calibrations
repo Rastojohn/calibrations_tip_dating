@@ -3,7 +3,18 @@ library(stringr)
 
 generate_calibrations <- function(input_file, output_file) {
   # Import data
+  if (!file.exists(input_file)) {
+    message("Error: The input file does not exist.")
+    return(invisible())
+  }
+  
   df <- read.csv(input_file)
+  
+  # Check if the input data has the required columns
+  if (!all(c("accepted_name", "min_ma", "max_ma") %in% names(df))) {
+    message("Error: The input file is not properly formatted. It should contain 'accepted_name', 'min_ma', and 'max_ma' columns.")
+    return(invisible())
+  }
   
   # Subset and rename the columns
   new_df <- df %>%
@@ -32,7 +43,10 @@ generate_calibrations <- function(input_file, output_file) {
   
   # Write the lines to a .txt file
   writeLines(output_lines, output_file)
+  
+  # Print a message indicating the output file generation
+  message("Calibration information has been generated and saved to ", normalizePath(output_file))
 }
 
-#example
-generate_calibrations("pbdb_data.csv", "calibrations.txt")
+# Example usage
+generate_calibrations(input_file = "pbdb_data.csv", output_file = "calibrations.txt")
