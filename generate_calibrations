@@ -1,52 +1,98 @@
 library(dplyr)
 library(stringr)
 
-generate_calibrations <- function(input_file, output_file) {
-  # Import data
+generate_calibrations <- function(input_file, output_file, taxa_list, report_file = "taxa_report.txt") {
+  # Check if the input file exists
   if (!file.exists(input_file)) {
-    message("Error: The input file does not exist.")
+    message("Error: Input file does not exist.")
     return(invisible())
   }
   
+  if (length(taxa_list) == 0) {
+    message("Error: The taxa list is empty.")
+    return(invisible())
+  }
+  
+  # Convert underscores to spaces
+  taxa_list_clean <- str_replace_all(taxa_list, "_", " ")
+  
+  # Read the data
   df <- read.csv(input_file)
   
-  # Check if the input data has the required columns
-  if (!all(c("accepted_name", "min_ma", "max_ma") %in% names(df))) {
-    message("Error: The input file is not properly formatted. It should not contain a header. It should have 'accepted_name', 'min_ma', and 'max_ma' columns.")
+  # Check required columns
+  required_cols <- c("accepted_name", "min_ma", "max_ma")
+  if (!all(required_cols %in% names(df))) {
+    message("Error: The file must contain the columns 'accepted_name', 'min_ma', and 'max_ma'.")
     return(invisible())
   }
   
-  # Subset and rename the columns
+  # Rename columns
   new_df <- df %>%
     select(taxa = accepted_name, min_ma, max_ma)
   
-  # Filter to retain only unique entries for each taxa with different max_ma or min_ma values
+  # Identify differences
+  taxa_in_data <- unique(new_df$taxa)
+  taxa_in_both <- intersect(taxa_list_clean, taxa_in_data)
+  taxa_only_in_list <- setdiff(taxa_list_clean, taxa_in_data)
+  taxa_only_in_data <- setdiff(taxa_in_data, taxa_list_clean)
+  
+  # Create the report as text
+  report_lines <- c(
+    "--- Taxon Matching Report ---",
+    "",
+    "Taxa present in the list but ABSENT in the data:"
+  )
+  if (length(taxa_only_in_list) == 0) {
+    report_lines <- c(report_lines, "  (None)")
+  } else {
+    report_lines <- c(report_lines, paste0("  - ", taxa_only_in_list))
+  }
+  
+  report_lines <- c(report_lines, "", "Taxa present in the data but ABSENT from the list:")
+  if (length(taxa_only_in_data) == 0) {
+    report_lines <- c(report_lines, "  (None)")
+  } else {
+    report_lines <- c(report_lines, paste0("  - ", taxa_only_in_data))
+  }
+  
+  report_lines <- c(
+    report_lines,
+    "",
+    paste0("Total number of taxa used for calibration: ", length(taxa_in_both))
+  )
+  
+  if (length(taxa_in_both) == 0) {
+    report_lines <- c(report_lines, "Warning: None of the provided taxa are present in the data.")
+    writeLines(report_lines, report_file)
+    message("⚠️ No taxa found in the data. Report saved to: ", normalizePath(report_file))
+    return(invisible())
+  }
+  
+  # Save the report
+  writeLines(report_lines, report_file)
+  message("📄 Report saved to: ", normalizePath(report_file))
+  
+  # Filter data
   filtered_df <- new_df %>%
-    group_by(taxa) %>%
-    filter(n() == 1 | (max(min_ma) != min(min_ma) | max(max_ma) != min(max_ma))) %>%
-    ungroup()
+    filter(taxa %in% taxa_in_both)
   
-  # Create a new dataframe with one entry per taxa with min(min_ma) and max(max_ma)
-  result_df <- new_df %>%
+  # Consolidate intervals by taxon
+  result_df <- filtered_df %>%
     group_by(taxa) %>%
-    summarize(min_ma = min(min_ma), max_ma = max(max_ma)) %>%
-    ungroup()
-  
-  # Replace spaces with underscores in taxa names
-  result_df <- result_df %>%
+    summarize(min_ma = min(min_ma), max_ma = max(max_ma), .groups = "drop") %>%
     mutate(taxa = str_replace_all(taxa, " ", "_"))
   
-  # Create the output strings in the required format
+  # Format calibration lines
   output_lines <- result_df %>%
     mutate(output = paste0(taxa, " = uniform(", min_ma, ", ", max_ma, ")")) %>%
     pull(output)
   
-  # Write the lines to a .txt file
+  # Write calibration lines
   writeLines(output_lines, output_file)
-  
-  # Print a message indicating the output file generation
-  message("Calibration information has been generated and saved to ", normalizePath(output_file))
+  message("✅ Calibrations saved to: ", normalizePath(output_file))
 }
 
 # Example usage
-generate_calibrations(input_file = "pbdb_data.csv", output_file = "calibrations.txt")
+my_taxa <- c("taxon_A", taxon_B")
+
+generate_calibrations("pbdb_data.csv", "calibrations.txt", taxa_list = my_taxa, report_file = "taxa_report.txt")
