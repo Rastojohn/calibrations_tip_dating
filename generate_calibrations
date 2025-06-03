@@ -7,39 +7,38 @@ generate_calibrations <- function(input_file, output_file, taxa_list, report_fil
     message("Error: Input file does not exist.")
     return(invisible())
   }
-  
+
   if (length(taxa_list) == 0) {
     message("Error: The taxa list is empty.")
     return(invisible())
   }
-  
+
   # Convert underscores to spaces
   taxa_list_clean <- str_replace_all(taxa_list, "_", " ")
-  
+
   # Read the data
   df <- read.csv(input_file)
-  
+
   # Check required columns
   required_cols <- c("accepted_name", "min_ma", "max_ma")
   if (!all(required_cols %in% names(df))) {
     message("Error: The file must contain the columns 'accepted_name', 'min_ma', and 'max_ma'.")
     return(invisible())
   }
-  
+
   # Rename columns
   new_df <- df %>%
     select(taxa = accepted_name, min_ma, max_ma)
-  
+
   # Identify differences
   taxa_in_data <- unique(new_df$taxa)
   taxa_in_both <- intersect(taxa_list_clean, taxa_in_data)
   taxa_only_in_list <- setdiff(taxa_list_clean, taxa_in_data)
   taxa_only_in_data <- setdiff(taxa_in_data, taxa_list_clean)
-  
-  # Create the report as text
+
+  # Create report
   report_lines <- c(
-    "--- Taxon Matching Report ---",
-    "",
+    "--- Taxon Matching Report ---", "",
     "Taxa present in the list but ABSENT in the data:"
   )
   if (length(taxa_only_in_list) == 0) {
@@ -47,52 +46,62 @@ generate_calibrations <- function(input_file, output_file, taxa_list, report_fil
   } else {
     report_lines <- c(report_lines, paste0("  - ", taxa_only_in_list))
   }
-  
+
   report_lines <- c(report_lines, "", "Taxa present in the data but ABSENT from the list:")
   if (length(taxa_only_in_data) == 0) {
     report_lines <- c(report_lines, "  (None)")
   } else {
     report_lines <- c(report_lines, paste0("  - ", taxa_only_in_data))
   }
-  
+
   report_lines <- c(
-    report_lines,
-    "",
+    report_lines, "",
     paste0("Total number of taxa used for calibration: ", length(taxa_in_both))
   )
-  
+
   if (length(taxa_in_both) == 0) {
     report_lines <- c(report_lines, "Warning: None of the provided taxa are present in the data.")
     writeLines(report_lines, report_file)
     message("⚠️ No taxa found in the data. Report saved to: ", normalizePath(report_file))
     return(invisible())
   }
-  
-  # Save the report
+
   writeLines(report_lines, report_file)
   message("📄 Report saved to: ", normalizePath(report_file))
-  
+
   # Filter data
   filtered_df <- new_df %>%
     filter(taxa %in% taxa_in_both)
-  
-  # Consolidate intervals by taxon
+
+  # Selecionar apenas a ocorrência mais antiga (max_ma mais alto)
   result_df <- filtered_df %>%
     group_by(taxa) %>%
-    summarize(min_ma = min(min_ma), max_ma = max(max_ma), .groups = "drop") %>%
+    slice_max(order_by = max_ma, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
     mutate(taxa = str_replace_all(taxa, " ", "_"))
-  
-  # Format calibration lines
+
+  # Gerar as linhas de calibração
   output_lines <- result_df %>%
     mutate(output = paste0(taxa, " = uniform(", min_ma, ", ", max_ma, ")")) %>%
     pull(output)
-  
-  # Write calibration lines
+
+  # Escrever as linhas
   writeLines(output_lines, output_file)
   message("✅ Calibrations saved to: ", normalizePath(output_file))
 }
 
-# Example usage
-my_taxa <- c("taxon_A", taxon_B")
+# Simular dados
+test_data <- data.frame(
+  accepted_name = c("taxon A", "taxon A", "taxon B", "taxon B", "taxon C"),
+  min_ma = c(98, 100, 85, 90, 120),
+  max_ma = c(100, 105, 90, 95, 130)
+)
 
+write.csv(test_data, "pbdb_data.csv", row.names = FALSE)
+
+# Definir a lista de táxons
+my_taxa <- c("taxon_A", "taxon_B", "taxon_C")
+
+# Rodar a função
 generate_calibrations("pbdb_data.csv", "calibrations.txt", taxa_list = my_taxa, report_file = "taxa_report.txt")
+
